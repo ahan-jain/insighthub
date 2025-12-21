@@ -1,0 +1,54 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Storage (uploaded/processed images)
+app/storage/images/*
+!app/storage/images/.gitkeep
+app/cv/storage/images/*
+!app/cv/storage/images/.gitkeep
+
+# YOLO models (downloaded at runtime)
+*.pt
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
