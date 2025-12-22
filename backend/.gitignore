@@ -45,6 +45,7 @@ app/cv/storage/images/*
 
 # YOLO models (downloaded at runtime)
 *.pt
+!requirements.txt
 
 # Environment variables
 .env
