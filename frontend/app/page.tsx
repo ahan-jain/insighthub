@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
 
@@ -10,6 +10,53 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
+  
+
+  const [location, setLocation] = useState<{
+    lat: number
+    lon: number
+    accuracy: number
+  } | null>(null)
+  const [locationStatus, setLocationStatus] = useState<string>('Detecting location...')
+
+  useEffect(() => {
+    if (!('geolocation' in navigator)) {
+      setLocationStatus('GPS not supported on this device')
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude,
+          accuracy: position.coords.accuracy
+        })
+        setLocationStatus('Location detected')
+        console.log('GPS:', position.coords)
+      },
+      (error) => {
+        console.error('GPS error:', error)
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setLocationStatus('Location permission denied')
+            break
+          case error.POSITION_UNAVAILABLE:
+            setLocationStatus('Location unavailable')
+            break
+          case error.TIMEOUT:
+            setLocationStatus('Location request timed out')
+            break
+        }
+      },
+      {
+        enableHighAccuracy: true,  // Use GPS (not WiFi)
+        timeout: 10000,            // Wait max 10 seconds
+        maximumAge: 0              // Don't use cached location
+      }
+    )
+  }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -37,6 +84,16 @@ export default function Home() {
     try {
       const formData = new FormData()
       formData.append('file', file)
+      
+      if (location) {
+        formData.append('latitude', location.lat.toString())
+        formData.append('longitude', location.lon.toString())
+        formData.append('location_accuracy', location.accuracy.toString())
+        
+        console.log('Uploading with GPS:', location)
+      } else {
+        console.log('Uploading without GPS')
+      }
 
       const response = await axios.post(
         'http://localhost:8000/analyze',
@@ -65,11 +122,24 @@ export default function Home() {
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            CV Inference App
+            InsightHub
           </h1>
           <p className="text-gray-600">
-            Upload an image to detect objects using YOLOv8
+            Geo-tagged Field Inspection Platform
           </p>
+          
+          {/* Location status indicator */}
+          <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+            <p className="text-sm font-medium text-blue-900">
+              {locationStatus}
+            </p>
+            {location && (
+              <p className="text-xs text-blue-700 mt-1">
+                📍 {location.lat.toFixed(4)}°N, {location.lon.toFixed(4)}°E
+                <span className="ml-2">±{location.accuracy.toFixed(0)}m</span>
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="bg-white rounded-lg shadow-lg p-8">

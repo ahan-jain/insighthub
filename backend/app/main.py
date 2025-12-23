@@ -1,4 +1,5 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from datetime import datetime, timezone
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -8,6 +9,7 @@ from pathlib import Path
 import shutil
 from .cv.infer import ObjectDetector
 from .cv.annotate import draw_detections
+from typing import List, Optional
 
 
 class Detection(BaseModel):
@@ -51,6 +53,28 @@ class AnalysisResponse(BaseModel):
     score: float = Field(..., ge=0.0, le=1.0, description="Mean confidence")
     summary: str = Field(..., description="Human-readable summary")
 
+    latitude: Optional[float] = Field(
+        None, 
+        ge=-90, 
+        le=90, 
+        description="GPS latitude"
+    )
+    longitude: Optional[float] = Field(
+        None, 
+        ge=-180, 
+        le=180, 
+        description="GPS longitude"
+    )
+    location_accuracy: Optional[float] = Field(
+        None, 
+        ge=0, 
+        description="GPS accuracy in meters"
+    )
+    timestamp: str = Field(
+        ..., 
+        description="ISO 8601 timestamp"
+    )
+
 
 app = FastAPI(title = "InsightHub")
 
@@ -78,16 +102,19 @@ def root():
     return {"message": "InsightHub v1.0"}
 
 @app.post("/analyze", response_model=AnalysisResponse)
-async def analyze_image(file: UploadFile = File(...)):
+async def analyze_image(file: UploadFile = File(...), 
+                        latitude: Optional[float] = Form(None),
+                        longitude: Optional[float] = Form(None),
+                        location_accuracy: Optional[float] = Form(None)):
     if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(
-            status_code=400,
-            detail="File must be an image (JPEG, PNG, etc.)"
-        )
+        raise HTTPException(400, "File must be an image")
     
     analysis_id = str(uuid.uuid4())
-    print(f"Processing analysis: {analysis_id}")
-
+    print(f"📸 Processing analysis: {analysis_id}")
+    
+    if latitude and longitude:
+        print(f"📍 Location: {latitude:.4f}°, {longitude:.4f}° (±{location_accuracy:.0f}m)")
+    
     file_ext = Path(file.filename).suffix
     image_path = STORAGE_DIR / f"{analysis_id}{file_ext}"
     
@@ -100,8 +127,6 @@ async def analyze_image(file: UploadFile = File(...)):
         print("Running YOLO inference...")
         detections = detector.detect(str(image_path))
         print(f"Found {len(detections)} objects")
-        annotated_path = OUTPUT_DIR / f"{analysis_id}_annotated.jpg"
-        draw_detections(str(image_path), detections, str(annotated_path))
         
         if detections:
             score = sum(d["confidence"] for d in detections) / len(detections)
@@ -127,7 +152,11 @@ async def analyze_image(file: UploadFile = File(...)):
             analysis_id=analysis_id,
             detections=detection_models,
             score=round(score, 3),
-            summary=summary
+            summary=summary,
+            latitude=latitude,
+            longitude=longitude,
+            location_accuracy=location_accuracy,
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
     
     except Exception as e:
