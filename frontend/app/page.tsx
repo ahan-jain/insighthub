@@ -4,13 +4,164 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
 
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: '100vh',
+    background: 'linear-gradient(#f9fafb, #f3f4f6)',
+    padding: 24,
+  },
+  container: {
+    maxWidth: 820,
+    margin: '0 auto',
+  },
+  header: {
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  title: {
+    fontSize: 42,
+    fontWeight: 900,
+    marginBottom: 6,
+    color: '#111827',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    color: '#4b5563',
+    fontSize: 16,
+  },
+  card: {
+    background: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: 14,
+    padding: 22,
+    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+    marginTop: 16,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 800,
+    marginBottom: 12,
+    color: '#111827',
+  },
+  row: {
+    display: 'flex',
+    gap: 12,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+  },
+  pill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '8px 12px',
+    borderRadius: 999,
+    border: '1px solid #dbeafe',
+    background: '#eff6ff',
+    color: '#1e3a8a',
+    fontSize: 13,
+    fontWeight: 700,
+    width: 'fit-content',
+  },
+  pillSub: {
+    marginTop: 6,
+    color: '#1d4ed8',
+    fontSize: 12,
+    fontWeight: 600,
+  },
+  grid2: {
+    display: 'grid',
+    gridTemplateColumns: '1fr',
+    gap: 14,
+    marginTop: 14,
+  },
+  label: {
+    display: 'block',
+    fontSize: 13,
+    fontWeight: 800,
+    color: '#374151',
+    marginBottom: 8,
+  },
+  inputWrap: {
+    border: '1px solid #e5e7eb',
+    borderRadius: 12,
+    padding: 14,
+    background: '#ffffff',
+  },
+  fileRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  fileBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '10px 14px',
+    borderRadius: 12,
+    border: '1px solid #e5e7eb',
+    background: '#f9fafb',
+    cursor: 'pointer',
+    fontWeight: 800,
+    color: '#111827',
+  },
+  fileHelp: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  hiddenFile: { display: 'none' },
+  error: {
+    background: '#fef2f2',
+    border: '1px solid #fecaca',
+    color: '#b91c1c',
+    padding: '10px 12px',
+    borderRadius: 12,
+    fontWeight: 700,
+    fontSize: 13,
+  },
+  previewCard: {
+    border: '1px solid #eef2f7',
+    background: '#f9fafb',
+    borderRadius: 12,
+    padding: 14,
+  },
+  previewImg: {
+    width: '100%',
+    height: 'auto',
+    borderRadius: 12,
+    display: 'block',
+  },
+  button: {
+    width: '100%',
+    border: 0,
+    borderRadius: 12,
+    padding: '14px 16px',
+    fontSize: 15,
+    fontWeight: 900,
+    cursor: 'pointer',
+    background: '#2563eb',
+    color: '#fff',
+  },
+  buttonDisabled: {
+    background: '#9ca3af',
+    cursor: 'not-allowed',
+  },
+  hint: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 10,
+    textAlign: 'center',
+  },
+}
+
 export default function Home() {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  
 
   const [location, setLocation] = useState<{
     lat: number
@@ -30,14 +181,14 @@ export default function Home() {
         setLocation({
           lat: position.coords.latitude,
           lon: position.coords.longitude,
-          accuracy: position.coords.accuracy
+          accuracy: position.coords.accuracy,
         })
         setLocationStatus('Location detected')
         console.log('GPS:', position.coords)
       },
       (error) => {
         console.error('GPS error:', error)
-        
+
         switch (error.code) {
           case error.PERMISSION_DENIED:
             setLocationStatus('Location permission denied')
@@ -48,23 +199,26 @@ export default function Home() {
           case error.TIMEOUT:
             setLocationStatus('Location request timed out')
             break
+          default:
+            setLocationStatus('Location unavailable')
+            break
         }
       },
       {
-        enableHighAccuracy: true,  // Use GPS (not WiFi)
-        timeout: 10000,            // Wait max 10 seconds
-        maximumAge: 0              // Don't use cached location
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
       }
     )
   }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
-    
+
     if (selectedFile) {
       setFile(selectedFile)
       setError(null)
-      
+
       const previewUrl = URL.createObjectURL(selectedFile)
       setPreview(previewUrl)
     }
@@ -72,7 +226,7 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!file) {
       setError('Please select an image')
       return
@@ -84,26 +238,19 @@ export default function Home() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      
+
       if (location) {
         formData.append('latitude', location.lat.toString())
         formData.append('longitude', location.lon.toString())
         formData.append('location_accuracy', location.accuracy.toString())
-        
         console.log('Uploading with GPS:', location)
       } else {
         console.log('Uploading without GPS')
       }
 
-      const response = await axios.post(
-        'http://localhost:8000/analyze',
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      )
+      const response = await axios.post('http://localhost:8000/analyze', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
 
       sessionStorage.setItem(
         `analysis_${response.data.analysis_id}`,
@@ -117,76 +264,82 @@ export default function Home() {
     }
   }
 
+  const locationPillText = location ? 'Location detected' : locationStatus
+  const isReady = !!file && !loading
+
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-8">
-      <div className="max-w-2xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            InsightHub
-          </h1>
-          <p className="text-gray-600">
-            Geo-tagged Field Inspection Platform
-          </p>
-          
-          {/* Location status indicator */}
-          <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-            <p className="text-sm font-medium text-blue-900">
-              {locationStatus}
-            </p>
-            {location && (
-              <p className="text-xs text-blue-700 mt-1">
-                📍 {location.lat.toFixed(4)}°N, {location.lon.toFixed(4)}°E
-                <span className="ml-2">±{location.accuracy.toFixed(0)}m</span>
-              </p>
-            )}
+    <main style={styles.page}>
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <h1 style={styles.title}>InsightHub</h1>
+          <p style={styles.subtitle}>Geo-tagged Field Inspection Platform</p>
+
+          <div style={{ marginTop: 14, display: 'flex', justifyContent: 'center' }}>
+            <div style={styles.pill}>
+              <span>📍</span>
+              <span>{locationPillText}</span>
+            </div>
           </div>
+
+          {location && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={styles.pillSub}>
+                {location.lat.toFixed(4)}°, {location.lon.toFixed(4)}° • ±{location.accuracy.toFixed(0)}m
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Select Image
-              </label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="block w-full text-sm text-gray-500
-                  file:mr-4 file:py-2 file:px-4
-                  file:rounded-lg file:border-0
-                  file:text-sm file:font-semibold
-                  file:bg-blue-50 file:text-blue-700
-                  hover:file:bg-blue-100
-                  cursor-pointer"
-              />
+        <div style={styles.card}>
+          <h2 style={styles.cardTitle}>Upload an image</h2>
+
+          <form onSubmit={handleSubmit}>
+            <label style={styles.label}>Select Image</label>
+
+            <div style={styles.inputWrap}>
+              <div style={styles.fileRow}>
+                <label style={styles.fileBtn}>
+                  <span>📷</span>
+                  <span>{file ? 'Change image' : 'Choose an image'}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    style={styles.hiddenFile}
+                  />
+                </label>
+
+                <div style={styles.fileHelp}>
+                  {file ? file.name : '.png, .jpg, .jpeg, .webp or .gif'}
+                </div>
+              </div>
             </div>
 
             {preview && (
-              <div className="border-2 border-gray-200 rounded-lg p-4">
-                <img
-                  src={preview}
-                  alt="Preview"
-                  className="max-w-full h-auto rounded"
-                />
+              <div style={{ marginTop: 14 }}>
+                <div style={styles.previewCard}>
+                  <img src={preview} alt="Preview" style={styles.previewImg} />
+                </div>
               </div>
             )}
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-                {error}
-              </div>
-            )}
+            {error && <div style={{ marginTop: 14, ...styles.error }}>{error}</div>}
 
             <button
               type="submit"
               disabled={!file || loading}
-              className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg
-                hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed
-                font-semibold transition-colors"
+              style={{
+                ...styles.button,
+                ...(isReady ? {} : styles.buttonDisabled),
+                marginTop: 16,
+              }}
             >
               {loading ? 'Analyzing...' : 'Analyze Image'}
             </button>
+
+            <div style={styles.hint}>
+              Tip: for best detections, use a clear photo with the subject centered
+            </div>
           </form>
         </div>
       </div>

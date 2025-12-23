@@ -1,7 +1,6 @@
 'use client'
 
-
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
@@ -16,23 +15,10 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 
-
-const MapContainer = dynamic(
-  () => import('react-leaflet').then(mod => mod.MapContainer),
-  { ssr: false }
-)
-const TileLayer = dynamic(
-  () => import('react-leaflet').then(mod => mod.TileLayer),
-  { ssr: false }
-)
-const Marker = dynamic(
-  () => import('react-leaflet').then(mod => mod.Marker),
-  { ssr: false }
-)
-const Popup = dynamic(
-  () => import('react-leaflet').then(mod => mod.Popup),
-  { ssr: false }
-)
+const MapContainer = dynamic(() => import('react-leaflet').then(m => m.MapContainer), { ssr: false })
+const TileLayer = dynamic(() => import('react-leaflet').then(m => m.TileLayer), { ssr: false })
+const Marker = dynamic(() => import('react-leaflet').then(m => m.Marker), { ssr: false })
+const Popup = dynamic(() => import('react-leaflet').then(m => m.Popup), { ssr: false })
 
 interface Detection {
   label: string
@@ -51,37 +37,72 @@ interface AnalysisData {
   timestamp: string
 }
 
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: '100vh',
+    background: 'linear-gradient(#f9fafb, #f3f4f6)',
+    padding: 24,
+  },
+  container: {
+    maxWidth: 1100,
+    margin: '0 auto',
+  },
+  backLink: {
+    display: 'inline-block',
+    color: '#2563eb',
+    textDecoration: 'none',
+    marginBottom: 16,
+    fontWeight: 600,
+  },
+  h1: { fontSize: 36, fontWeight: 800, marginBottom: 8 },
+  muted: { color: '#4b5563' },
+  smallMuted: { color: '#6b7280', fontSize: 14 },
+  card: {
+    background: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 24,
+  },
+  cardTitle: { fontSize: 18, fontWeight: 700, marginBottom: 12 },
+  score: { fontSize: 48, fontWeight: 800, color: '#2563eb' },
+  mapWrap: {
+    height: 384,
+    borderRadius: 12,
+    overflow: 'hidden',
+    border: '1px solid #e5e7eb',
+  },
+  viewer: {
+    background: '#f9fafb',
+    borderRadius: 10,
+    padding: 16,
+    border: '1px solid #eef2f7',
+  },
+}
+
 export default function ResultsPage() {
   const params = useParams()
   const analysisId = params.id as string
 
   const [data, setData] = useState<AnalysisData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.25)
-  
+
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [originalImage, setOriginalImage] = useState<HTMLImageElement | null>(null)
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const storedData = sessionStorage.getItem(`analysis_${analysisId}`)
-        
-        if (storedData) {
-          setData(JSON.parse(storedData))
-        } else {
-          setError('Analysis data not found')
-        }
-        
-        setLoading(false)
-      } catch (err) {
-        setError('Failed to load results')
-        setLoading(false)
-      }
-    }
+    const L = require('leaflet')
+    delete L.Icon.Default.prototype._getIconUrl
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+      iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+    })
+  }, [])
 
-    fetchData()
+  useEffect(() => {
+    const stored = sessionStorage.getItem(`analysis_${analysisId}`)
+    if (stored) setData(JSON.parse(stored))
   }, [analysisId])
 
   useEffect(() => {
@@ -93,272 +114,248 @@ export default function ResultsPage() {
 
   useEffect(() => {
     if (!originalImage || !canvasRef.current || !data) return
-
+  
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-
-    canvas.width = originalImage.width
-    canvas.height = originalImage.height
-
-    ctx.drawImage(originalImage, 0, 0)
-
-    const filteredDetections = data.detections.filter(
-      (det) => det.confidence >= confidenceThreshold
-    )
-
-    filteredDetections.forEach((det) => {
+  
+    const cssWidth = canvas.clientWidth || originalImage.width
+    const scale = cssWidth / originalImage.width
+    const cssHeight = Math.round(originalImage.height * scale)
+  
+    canvas.width = Math.round(cssWidth)
+    canvas.height = cssHeight
+  
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(originalImage, 0, 0, canvas.width, canvas.height)
+  
+    const dets = data.detections.filter((d) => d.confidence >= confidenceThreshold)
+  
+    ctx.strokeStyle = '#00ff00'
+    ctx.lineWidth = Math.max(2, 3 * scale)
+  
+    dets.forEach((det) => {
       const [x1, y1, x2, y2] = det.bbox
-
-      ctx.strokeStyle = '#00ff00'
-      ctx.lineWidth = 3
-      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1)
-
+  
+      const sx1 = x1 * scale
+      const sy1 = y1 * scale
+      const sw = (x2 - x1) * scale
+      const sh = (y2 - y1) * scale
+  
+      // box
+      ctx.strokeRect(sx1, sy1, sw, sh)
+  
+      // label text
       const label = `${det.label} ${(det.confidence * 100).toFixed(0)}%`
-      ctx.font = '16px Arial'
-      const textMetrics = ctx.measureText(label)
-      const textHeight = 20
-
+  
+      const fontSize = Math.max(12, Math.round(16 * scale))
+      ctx.font = `${fontSize}px Arial`
+  
+      const padX = Math.max(6, Math.round(6 * scale))
+      const padY = Math.max(4, Math.round(4 * scale))
+      const textW = ctx.measureText(label).width
+      const boxH = Math.round(fontSize * 1.3) + padY
+      const boxW = textW + padX * 2
+  
+      // put label above box when possible
+      const ly = sy1 - boxH - 4
+      const drawY = ly > 0 ? ly : sy1 + 4
+  
+      // green label background
       ctx.fillStyle = '#00ff00'
-      ctx.fillRect(x1, y1 - textHeight - 5, textMetrics.width + 10, textHeight + 5)
-
+      ctx.fillRect(sx1, drawY, boxW, boxH)
+  
+      // black label text
       ctx.fillStyle = '#000000'
-      ctx.fillText(label, x1 + 5, y1 - 8)
+      ctx.fillText(label, sx1 + padX, drawY + Math.round(fontSize * 1.05))
+  
+      // reset fill for next iteration
+      ctx.fillStyle = '#00ff00'
     })
   }, [originalImage, data, confidenceThreshold])
 
-  const filteredDetections = data?.detections.filter(
-    (det) => det.confidence >= confidenceThreshold
-  ) || []
+  const filteredDetections = data
+  ? data.detections.filter((d) => d.confidence >= confidenceThreshold)
+  : []
+  
+  const chartData = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const det of filteredDetections) counts[det.label] = (counts[det.label] || 0) + 1
+    return Object.entries(counts).map(([label, count]) => ({ label, count }))
+  }, [filteredDetections])
 
-  const getChartData = () => {
-    if (!filteredDetections.length) return []
 
-    const labelCounts: { [key: string]: number } = {}
-    filteredDetections.forEach((det) => {
-      labelCounts[det.label] = (labelCounts[det.label] || 0) + 1
-    })
+  
 
-    return Object.entries(labelCounts).map(([label, count]) => ({
-      label,
-      count,
-    }))
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading results...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (error || !data) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600 mb-4">{error || 'No data found'}</p>
-          <Link href="/" className="text-blue-600 hover:underline">
-            Back to Upload
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  const hasLocation = data.latitude !== null && data.longitude !== null
+  if (!data) return null
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 p-8">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <Link href="/" className="text-blue-600 hover:underline mb-4 inline-block">
-            ← Back to Upload
-          </Link>
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            Analysis Results
-          </h1>
-          <p className="text-gray-600">{data.summary}</p>
-          
-          {/* NEW: Timestamp */}
-          <p className="text-sm text-gray-500 mt-2">
-            📅 {new Date(data.timestamp).toLocaleString()}
-          </p>
-        </div>
+    <main style={styles.page}>
+      <div style={styles.container}>
+        <Link href="/" style={styles.backLink}>← Back to Upload</Link>
+        <h1 style={styles.h1}>Analysis Results</h1>
+        <p style={styles.muted}>{data.summary}</p>
 
-        {/* NEW: Location Map */}
-        {hasLocation && (
-          <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <h2 className="text-xl font-semibold mb-4">Analysis Location</h2>
-            <p className="text-sm text-gray-600 mb-4">
-              📍 {data.latitude!.toFixed(6)}°, {data.longitude!.toFixed(6)}°
-              {data.location_accuracy && (
-                <span className="ml-2">
-                  (±{data.location_accuracy.toFixed(0)}m accuracy)
-                </span>
-              )}
-            </p>
-            
-            <div className="h-96 rounded-lg overflow-hidden border border-gray-200">
+        {data.latitude && data.longitude && (
+          <div style={styles.card}>
+            <h2 style={styles.cardTitle}>Analysis Location</h2>
+            <div style={styles.mapWrap}>
               <MapContainer
-                center={[data.latitude!, data.longitude!]}
+                center={[data.latitude, data.longitude]}
                 zoom={15}
                 style={{ height: '100%', width: '100%' }}
               >
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
-                <Marker position={[data.latitude!, data.longitude!]}>
-                  <Popup>
-                    <div className="text-center">
-                      <p className="font-semibold">Analysis Location</p>
-                      <p className="text-xs text-gray-600">
-                        {data.latitude!.toFixed(6)}°, {data.longitude!.toFixed(6)}°
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {new Date(data.timestamp).toLocaleString()}
-                      </p>
-                    </div>
-                  </Popup>
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <Marker position={[data.latitude, data.longitude]}>
+                  <Popup>Analysis Location</Popup>
                 </Marker>
               </MapContainer>
             </div>
           </div>
         )}
 
-        {/* Score Card */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-2">Overall Score</h2>
-          <div className="text-5xl font-bold text-blue-600">
-            {(data.score * 100).toFixed(1)}%
-          </div>
-          <p className="text-gray-600 mt-2">
-            Average confidence across all detections
-          </p>
+        <div style={styles.card}>
+          <h2 style={styles.cardTitle}>Overall Score</h2>
+          <p style={styles.score}>{(data.score * 100).toFixed(1)}%</p>
         </div>
 
-        {/* Confidence Slider */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Confidence Threshold</h2>
-          <div className="flex items-center gap-4">
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={confidenceThreshold}
-              onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
-              className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+        <div style={styles.card}>
+        <h2 style={styles.cardTitle}>Confidence Threshold</h2>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={confidenceThreshold}
+            onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
+            style={{ width: '100%' }}
+          />
+          <span style={{ fontWeight: 700, color: '#2563eb', minWidth: 56 }}>
+            {(confidenceThreshold * 100).toFixed(0)}%
+          </span>
+        </div>
+
+        <p style={{ ...styles.smallMuted, marginTop: 10 }}>
+          Showing {filteredDetections.length} of {data.detections.length} detections
+        </p>
+      </div>
+
+        {/* IMAGE STACK — UPDATED */}
+        <div style={styles.card}>
+          <h2 style={styles.cardTitle}>Original Image</h2>
+          <div style={styles.viewer}>
+            <img
+              src={`http://localhost:8000/images/${analysisId}/original`}
+              alt="Original"
+              style={{ width: '100%', height: 'auto', borderRadius: 10 }}
             />
-            <span className="text-lg font-semibold text-blue-600 min-w-[60px]">
-              {(confidenceThreshold * 100).toFixed(0)}%
-            </span>
-          </div>
-          <p className="text-sm text-gray-600 mt-2">
-            Showing {filteredDetections.length} of {data.detections.length} detections
-          </p>
-        </div>
-
-        {/* Images */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Original Image */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">Original Image</h2>
-            <div className="flex justify-center items-center bg-gray-50 rounded p-4">
-              <img
-                src={`http://localhost:8000/images/${analysisId}/original`}
-                alt="Original"
-                className="max-w-full max-h-[500px] w-auto h-auto object-contain rounded"
-              />
-            </div>
-          </div>
-
-          {/* Annotated Image */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">Detected Objects</h2>
-            <div className="flex justify-center items-center bg-gray-50 rounded p-4">
-              <canvas
-                ref={canvasRef}
-                className="max-w-full max-h-[500px] w-auto h-auto object-contain rounded"
-                style={{ display: 'block' }}
-              />
-            </div>
           </div>
         </div>
 
-        {/* Detections Table */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">
-            Detections ({filteredDetections.length})
-          </h2>
-          {filteredDetections.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">
-              No detections above {(confidenceThreshold * 100).toFixed(0)}% confidence
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Label
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Confidence
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Bounding Box
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredDetections.map((det, idx) => (
-                    <tr key={idx}>
-                      <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
-                        {det.label}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                          {(det.confidence * 100).toFixed(1)}%
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        [{det.bbox.map((v) => v.toFixed(0)).join(', ')}]
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Chart */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">Detection Counts</h2>
-          {getChartData().length === 0 ? (
-            <p className="text-gray-500 text-center py-8">
-              No data to display
-            </p>
-          ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={getChartData()}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="label" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="count" fill="#3B82F6" />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
+        <div style={styles.card}>
+          <h2 style={styles.cardTitle}>Detected Objects</h2>
+          <div style={styles.viewer}>
+            <canvas
+              ref={canvasRef}
+              style={{ width: '100%', display: 'block', borderRadius: 10 }}
+            />
+          </div>
         </div>
       </div>
+
+      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+      {/* Detections card */}
+      <div style={styles.card}>
+        <h2 style={styles.cardTitle}>Detections</h2>
+
+        {filteredDetections.length === 0 ? (
+          <p style={{ ...styles.smallMuted, textAlign: 'center', padding: 24 }}>
+            No detections above {(confidenceThreshold * 100).toFixed(0)}% confidence
+          </p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#f9fafb' }}>
+                  <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: 12, color: '#6b7280' }}>
+                    Label
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: 12, color: '#6b7280' }}>
+                    Confidence
+                  </th>
+                  <th style={{ textAlign: 'left', padding: '10px 12px', fontSize: 12, color: '#6b7280' }}>
+                    Bounding Box
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredDetections.map((det, idx) => (
+                  <tr key={idx} style={{ borderTop: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '10px 12px' }}>{det.label}</td>
+                    <td style={{ padding: '10px 12px' }}>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '4px 10px',
+                        borderRadius: 999,
+                        background: '#ecfeff',
+                        border: '1px solid #67e8f9',
+                        color: '#0369a1',
+                        fontWeight: 700,
+                        fontSize: 13,
+                      }}
+                    >
+                      {(det.confidence * 100).toFixed(1)}%
+                    </span>
+                  </td>
+                  <td style={{ padding: '10px 12px' }}>
+                  <span
+                    style={{
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                      fontSize: 12,
+                      color: '#6b7280',
+                      background: '#f9fafb',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: 6,
+                      padding: '3px 6px',
+                      display: 'inline-block',
+                    }}
+                  >
+                    [{det.bbox.map((v) => v.toFixed(0)).join(', ')}]
+                  </span>
+                </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Detection Counts card */}
+      <div style={styles.card}>
+        <h2 style={styles.cardTitle}>Detection Counts</h2>
+
+        {chartData.length === 0 ? (
+          <p style={{ ...styles.smallMuted, textAlign: 'center', padding: 24 }}>
+            No data to display
+          </p>
+        ) : (
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="label" />
+              <YAxis allowDecimals={false} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="count" fill="#3B82F6" />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
     </main>
   )
 }

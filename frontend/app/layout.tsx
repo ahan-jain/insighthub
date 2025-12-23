@@ -1,4 +1,4 @@
-import 'leaflet/dist/leaflet.css'
+import './globals.css'
 
 export const metadata = {
   title: 'Next.js',
