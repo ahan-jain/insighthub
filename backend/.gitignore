@@ -53,3 +53,10 @@ app/cv/storage/images/*
 
 # Logs
 *.log
+
+*.jpg
+*.jpeg
+*.png
+*.pdf
+*.webp
+*.gif
