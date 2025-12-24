@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
+import { saveOfflineAnalysis, getPendingCount } from '../lib/offline-db'
+import { syncPendingAnalyses } from '../lib/sync-manager'
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
@@ -154,6 +156,54 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 10,
     textAlign: 'center',
   },
+
+  statusBar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: '50%',
+  },
+  statusOnline: {
+    background: '#10b981',
+  },
+  statusOffline: {
+    background: '#ef4444',
+  },
+  statusText: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: 13,
+    fontWeight: 700,
+  },
+  pendingBadge: {
+    background: '#fef3c7',
+    border: '1px solid #fbbf24',
+    borderRadius: 999,
+    padding: '6px 12px',
+    fontSize: 12,
+    fontWeight: 800,
+    color: '#92400e',
+  },
+  offlineNotice: {
+    background: '#eff6ff',
+    border: '1px solid #bfdbfe',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 14,
+  },
+  offlineNoticeText: {
+    fontSize: 13,
+    color: '#1e40af',
+    lineHeight: 1.5,
+  },
 }
 
 export default function Home() {
@@ -170,6 +220,50 @@ export default function Home() {
   } | null>(null)
   const [locationStatus, setLocationStatus] = useState<string>('Detecting location...')
 
+  // NEW: Online/Offline state
+  const [isOnline, setIsOnline] = useState(true)
+  const [pendingCount, setPendingCount] = useState(0)
+
+  // Monitor online/offline status
+  useEffect(() => {
+    const updateOnlineStatus = () => {
+      setIsOnline(navigator.onLine)
+    }
+
+    setIsOnline(navigator.onLine)
+    window.addEventListener('online', updateOnlineStatus)
+    window.addEventListener('offline', updateOnlineStatus)
+
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus)
+      window.removeEventListener('offline', updateOnlineStatus)
+    }
+  }, [])
+
+  // Update pending count
+  useEffect(() => {
+    const updateCount = async () => {
+      const count = await getPendingCount()
+      setPendingCount(count)
+    }
+
+    updateCount()
+    const interval = setInterval(updateCount, 5000) // Update every 5s
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Auto-sync when coming online
+  useEffect(() => {
+    if (isOnline && pendingCount > 0) {
+      console.log('Device back online, syncing pending analyses...')
+      syncPendingAnalyses().then(() => {
+        getPendingCount().then(setPendingCount)
+      })
+    }
+  }, [isOnline])
+
+  // Existing GPS effect
   useEffect(() => {
     if (!('geolocation' in navigator)) {
       setLocationStatus('GPS not supported on this device')
@@ -188,7 +282,6 @@ export default function Home() {
       },
       (error) => {
         console.error('GPS error:', error)
-
         switch (error.code) {
           case error.PERMISSION_DENIED:
             setLocationStatus('Location permission denied')
@@ -236,6 +329,31 @@ export default function Home() {
     setError(null)
 
     try {
+      // If offline, save to IndexedDB
+      if (!navigator.onLine) {
+        const blob = new Blob([await file.arrayBuffer()], { type: file.type })
+
+        await saveOfflineAnalysis({
+          image: blob,
+          imageFileName: file.name,
+          latitude: location?.lat || null,
+          longitude: location?.lon || null,
+          locationAccuracy: location?.accuracy || null,
+        })
+
+        alert('📱 Saved offline! Will sync when connection returns.')
+        setFile(null)
+        setPreview(null)
+        setLoading(false)
+
+        // Update count
+        const count = await getPendingCount()
+        setPendingCount(count)
+
+        return
+      }
+
+      // If online, upload normally
       const formData = new FormData()
       formData.append('file', file)
 
@@ -259,7 +377,24 @@ export default function Home() {
 
       router.push(`/results/${response.data.analysis_id}`)
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Upload failed')
+      console.error('Upload error:', err)
+
+      // If upload fails, save offline as fallback
+      const blob = new Blob([await file.arrayBuffer()], { type: file.type })
+
+      await saveOfflineAnalysis({
+        image: blob,
+        imageFileName: file.name,
+        latitude: location?.lat || null,
+        longitude: location?.lon || null,
+        locationAccuracy: location?.accuracy || null,
+      })
+
+      setError('Upload failed. Saved offline for later sync.')
+
+      const count = await getPendingCount()
+      setPendingCount(count)
+
       setLoading(false)
     }
   }
@@ -272,7 +407,27 @@ export default function Home() {
       <div style={styles.container}>
         <div style={styles.header}>
           <h1 style={styles.title}>InsightHub</h1>
-          <p style={styles.subtitle}>Geo-tagged Field Inspection Platform</p>
+          <p style={styles.subtitle}>
+            Geo-tagged Field Inspection Platform
+            {!isOnline && ' • Offline Mode'}
+          </p>
+
+          {/* Status bar with online/offline and pending count */}
+          <div style={styles.statusBar}>
+            <div style={styles.statusText}>
+              <div style={{
+                ...styles.statusDot,
+                ...(isOnline ? styles.statusOnline : styles.statusOffline),
+              }} />
+              <span>{isOnline ? 'Online' : 'Offline'}</span>
+            </div>
+
+            {pendingCount > 0 && (
+              <div style={styles.pendingBadge}>
+                📦 {pendingCount} pending sync
+              </div>
+            )}
+          </div>
 
           <div style={{ marginTop: 14, display: 'flex', justifyContent: 'center' }}>
             <div style={styles.pill}>
@@ -284,7 +439,8 @@ export default function Home() {
           {location && (
             <div style={{ textAlign: 'center' }}>
               <div style={styles.pillSub}>
-                {location.lat.toFixed(4)}°, {location.lon.toFixed(4)}° • ±{location.accuracy.toFixed(0)}m
+                {location.lat.toFixed(4)}°, {location.lon.toFixed(4)}° • ±
+                {location.accuracy.toFixed(0)}m
               </div>
             </div>
           )}
@@ -334,8 +490,20 @@ export default function Home() {
                 marginTop: 16,
               }}
             >
-              {loading ? 'Analyzing...' : 'Analyze Image'}
+              {loading 
+                ? (isOnline ? 'Analyzing...' : 'Saving offline...') 
+                : (isOnline ? 'Analyze Image' : 'Save Offline')}
             </button>
+
+            {/* Offline notice */}
+            {!isOnline && (
+              <div style={styles.offlineNotice}>
+                <p style={styles.offlineNoticeText}>
+                  <strong>💡 Offline Mode:</strong> Your images will be saved locally
+                  and automatically uploaded when you reconnect.
+                </p>
+              </div>
+            )}
 
             <div style={styles.hint}>
               Tip: for best detections, use a clear photo with the subject centered

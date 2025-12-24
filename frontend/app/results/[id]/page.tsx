@@ -142,11 +142,9 @@ export default function ResultsPage() {
       const sw = (x2 - x1) * scale
       const sh = (y2 - y1) * scale
   
-      // box
       ctx.strokeRect(sx1, sy1, sw, sh)
   
-      // label text
-      const label = `${det.label} ${(det.confidence * 100).toFixed(0)}%`
+      const label = `${det.label} ${(det.confidence * 100).toFixed(1)}%`
   
       const fontSize = Math.max(12, Math.round(16 * scale))
       ctx.font = `${fontSize}px Arial`
@@ -157,19 +155,15 @@ export default function ResultsPage() {
       const boxH = Math.round(fontSize * 1.3) + padY
       const boxW = textW + padX * 2
   
-      // put label above box when possible
       const ly = sy1 - boxH - 4
       const drawY = ly > 0 ? ly : sy1 + 4
   
-      // green label background
       ctx.fillStyle = '#00ff00'
       ctx.fillRect(sx1, drawY, boxW, boxH)
-  
-      // black label text
+
       ctx.fillStyle = '#000000'
       ctx.fillText(label, sx1 + padX, drawY + Math.round(fontSize * 1.05))
   
-      // reset fill for next iteration
       ctx.fillStyle = '#00ff00'
     })
   }, [originalImage, data, confidenceThreshold])
@@ -227,7 +221,7 @@ export default function ResultsPage() {
             type="range"
             min="0"
             max="1"
-            step="0.05"
+            step="0.01"
             value={confidenceThreshold}
             onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
             style={{ width: '100%' }}
@@ -242,7 +236,7 @@ export default function ResultsPage() {
         </p>
       </div>
 
-        {/* IMAGE STACK — UPDATED */}
+        {/* Image Stack*/}
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Original Image</h2>
           <div style={styles.viewer}>

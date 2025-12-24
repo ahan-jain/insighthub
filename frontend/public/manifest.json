@@ -1,0 +1,25 @@
+{
+    "name": "InsightHub - Field Intelligence Platform",
+    "short_name": "InsightHub",
+    "description": "AI-powered computer vision detection for field inspections",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#2563eb",
+    "orientation": "portrait-primary",
+    "categories": ["productivity", "utilities"],
+    "shortcuts": [
+      {
+        "name": "Upload Image",
+        "short_name": "Upload",
+        "description": "Upload a new image for analysis",
+        "url": "/"
+      },
+      {
+        "name": "View Dashboard",
+        "short_name": "Dashboard",
+        "description": "View analytics dashboard",
+        "url": "/dashboard"
+      }
+    ]
+  }

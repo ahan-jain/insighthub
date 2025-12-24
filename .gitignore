@@ -49,3 +49,5 @@ yarn-error.log*
 # Package locks (optional - some keep these)
 # package-lock.json
 # yarn.lock
+*.jpeg
+*.jpg

@@ -32,3 +32,7 @@ yarn-error.log*
 # Typescript
 *.tsbuildinfo
 next-env.d.ts
+
+public/sw.js
+public/workbox-*.js
+public/icon-*.png
