@@ -60,3 +60,4 @@ app/cv/storage/images/*
 *.pdf
 *.webp
 *.gif
+response.json

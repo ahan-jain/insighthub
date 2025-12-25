@@ -3,13 +3,14 @@ from datetime import datetime, timezone
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 import uuid
 from pathlib import Path
 import shutil
 from .cv.infer import ObjectDetector
 from .cv.annotate import draw_detections
-from typing import List, Optional
+from .utils.severity_classifier import SeverityClassifier
+from .utils.auto_tagger import AutoTagger
 
 
 class Detection(BaseModel):
@@ -37,6 +38,7 @@ class Detection(BaseModel):
         max_items=4,
         description="Bounding box [x1, y1, x2, y2]"
     )
+
 
 class AnalysisResponse(BaseModel):
     """
@@ -74,9 +76,13 @@ class AnalysisResponse(BaseModel):
         ..., 
         description="ISO 8601 timestamp"
     )
+    
+    severity: str = Field(..., description="Issue severity level")
+    severity_reason: str = Field(..., description="Explanation for severity")
+    tags: List[str] = Field(..., description="Auto-generated contextual tags")
 
 
-app = FastAPI(title = "InsightHub")
+app = FastAPI(title="InsightHub")
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,23 +95,33 @@ app.add_middleware(
 print("Initializing YOLO model...")
 detector = ObjectDetector()
 print("Model ready!")
+
 STORAGE_DIR = Path("app/storage/images")
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR = Path("app/cv/storage/images")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# In-memory storage for analyses
+analyses_storage = {}
+
+
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "service": "insight-hub"}
+
+
 @app.get("/")
 def root():
     return {"message": "InsightHub v1.0"}
 
+
 @app.post("/analyze", response_model=AnalysisResponse)
-async def analyze_image(file: UploadFile = File(...), 
-                        latitude: Optional[float] = Form(None),
-                        longitude: Optional[float] = Form(None),
-                        location_accuracy: Optional[float] = Form(None)):
+async def analyze_image(
+    file: UploadFile = File(...),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
+    location_accuracy: Optional[float] = Form(None)
+):
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(400, "File must be an image")
     
@@ -148,7 +164,11 @@ async def analyze_image(file: UploadFile = File(...),
         
         detection_models = [Detection(**d) for d in detections]
         
-        return AnalysisResponse(
+        severity, severity_reason = SeverityClassifier.classify(detections)
+        
+        tags = AutoTagger.generate_tags(detections)
+        
+        response = AnalysisResponse(
             analysis_id=analysis_id,
             detections=detection_models,
             score=round(score, 3),
@@ -156,8 +176,15 @@ async def analyze_image(file: UploadFile = File(...),
             latitude=latitude,
             longitude=longitude,
             location_accuracy=location_accuracy,
-            timestamp=datetime.now(timezone.utc).isoformat()
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            severity=severity,
+            severity_reason=severity_reason,
+            tags=tags
         )
+        
+        analyses_storage[analysis_id] = response.model_dump()
+        
+        return response
     
     except Exception as e:
         if image_path.exists():
@@ -165,6 +192,7 @@ async def analyze_image(file: UploadFile = File(...),
         
         print(f"Error: {str(e)}")
         raise HTTPException(500, f"Analysis failed: {str(e)}")
+
 
 @app.get("/images/{analysis_id}/original")
 def get_original_image(analysis_id: str):
@@ -174,6 +202,7 @@ def get_original_image(analysis_id: str):
             return FileResponse(path)
     
     raise HTTPException(404, f"Image not found: {analysis_id}")
+
 
 @app.get("/images/{analysis_id}/annotated")
 def get_annotated_image(analysis_id: str):

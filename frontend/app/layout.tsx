@@ -5,12 +5,15 @@ export const metadata: Metadata = {
   title: 'InsightHub - Field Intelligence Platform',
   description: 'AI-powered computer vision detection for field inspections',
   manifest: '/manifest.json',
-  themeColor: '#2563eb',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
     title: 'InsightHub'
   }
+}
+
+export const viewport = {
+  themeColor: '#2563eb',
 }
 
 export default function RootLayout({

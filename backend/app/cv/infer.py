@@ -1,45 +1,46 @@
 from ultralytics import YOLO
 from pathlib import Path
-from typing import List, Dict
-import json
 
 class ObjectDetector:
-    def __init__(self, model_name: str = "yolov8n.pt"):
-        print(f"Loading model: {model_name}")
-        self.model = YOLO(model_name)
-        print("Model loaded successfully")
-    
-    def detect(self, image_path: str, conf_threshold: float = 0.25) -> List[Dict]:
-        results = self.model(image_path, conf=conf_threshold)
+    def __init__(self):
+        # General object detection
+        self.general_model = YOLO("yolov8n.pt")
         
+        # PPE detection
+        ppe_model_path = Path("app/models/ppe-detector.pt")
+        if ppe_model_path.exists():
+            self.ppe_model = YOLO(str(ppe_model_path))
+            print("PPE detection model loaded")
+            print(f"   Classes: {self.ppe_model.names}")
+        else:
+            self.ppe_model = None
+            print("PPE model not found")
+    
+    def detect(self, image_path: str):
         detections = []
-        for result in results:
-            boxes = result.boxes
-            for box in boxes:
-                class_id = int(box.cls[0])
-                class_name = self.model.names[class_id]
-                confidence = float(box.conf[0])
-                bbox = box.xyxy[0].tolist()
+        
+        # Run general YOLO (person, car, etc.)
+        general_results = self.general_model(image_path, verbose=False)[0]
+        for box in general_results.boxes:
+            detections.append({
+                "label": general_results.names[int(box.cls[0])],
+                "confidence": float(box.conf[0]),
+                "bbox": box.xyxy[0].tolist()
+            })
+        
+        # Run PPE detector if available
+        if self.ppe_model:
+            ppe_results = self.ppe_model(image_path, verbose=False)[0]
+            for box in ppe_results.boxes:
+                label = ppe_results.names[int(box.cls[0])]
                 
-                detection = {
-                    "label": class_name,
-                    "confidence": confidence,
-                    "bbox": bbox
-                }
-                detections.append(detection)
+                # Normalize label names to lowercase with underscores
+                label = label.lower().replace(' ', '_')
+                
+                detections.append({
+                    "label": label,
+                    "confidence": float(box.conf[0]),
+                    "bbox": box.xyxy[0].tolist()
+                })
         
         return detections
-
-if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Run YOLO inference")
-    parser.add_argument("--image", required=True, help="Path to image")
-    parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold (0.0-1.0)")
-    args = parser.parse_args()
-    
-    detector = ObjectDetector()
-    detections = detector.detect(args.image, args.conf)
-    
-    print(json.dumps(detections, indent=2))
-    print(f"\nTotal detections: {len(detections)}")
