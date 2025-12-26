@@ -50,6 +50,14 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: 1100,
     margin: '0 auto',
   },
+  headerRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 24,
+    gap: 16,
+    flexWrap: 'wrap',
+  },
   backLink: {
     display: 'inline-block',
     color: '#2563eb',
@@ -60,6 +68,32 @@ const styles: Record<string, React.CSSProperties> = {
   h1: { fontSize: 36, fontWeight: 800, marginBottom: 8 },
   muted: { color: '#4b5563' },
   smallMuted: { color: '#6b7280', fontSize: 14 },
+  downloadBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '12px 20px',
+    borderRadius: 12,
+    border: 0,
+    background: '#2563eb',
+    color: '#fff',
+    fontWeight: 900,
+    fontSize: 14,
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+    flexShrink: 0,
+  },
+  downloadBtnDisabled: {
+    background: '#9ca3af',
+    cursor: 'not-allowed',
+  },
+  spinner: {
+    width: 16,
+    height: 16,
+    border: '2px solid rgba(255,255,255,0.3)',
+    borderTop: '2px solid #fff',
+    borderRadius: '50%',
+  },
   card: {
     background: '#fff',
     border: '1px solid #e5e7eb',
@@ -211,6 +245,7 @@ export default function ResultsPage() {
 
   const [data, setData] = useState<AnalysisData | null>(null)
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.25)
+  const [isDownloading, setIsDownloading] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [originalImage, setOriginalImage] = useState<HTMLImageElement | null>(null)
@@ -293,6 +328,38 @@ export default function ResultsPage() {
     })
   }, [originalImage, data, confidenceThreshold])
 
+  const handleDownloadReport = async () => {
+    setIsDownloading(true)
+    
+    try {
+      const response = await fetch(
+        `http://localhost:8000/analyze/${analysisId}/report`
+      )
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate report')
+      }
+      
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `analysis_${analysisId}_report.pdf`
+      
+      document.body.appendChild(link)
+      link.click()
+      
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+    } catch (error) {
+      console.log('Download error:', error)
+      alert('Failed to download report')
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
   const filteredDetections = data
     ? data.detections.filter((d) => d.confidence >= confidenceThreshold)
     : []
@@ -308,16 +375,52 @@ export default function ResultsPage() {
   return (
     <main style={styles.page}>
       <div style={styles.container}>
-        <Link href="/" style={styles.backLink}>← Back to Upload</Link>
-        <h1 style={styles.h1}>Analysis Results</h1>
-        <p style={styles.muted}>{data.summary}</p>
+        <div style={styles.headerRow}>
+          <div style={{ flex: 1 }}>
+            <Link href="/" style={styles.backLink}>← Back to Upload</Link>
+            <h1 style={styles.h1}>Analysis Results</h1>
+            <p style={styles.muted}>{data.summary}</p>
+          </div>
+          
+          <button
+            onClick={handleDownloadReport}
+            disabled={isDownloading}
+            style={{
+              ...styles.downloadBtn,
+              ...(isDownloading ? styles.downloadBtnDisabled : {}),
+            }}
+            onMouseEnter={(e) => {
+              if (!isDownloading) {
+                e.currentTarget.style.background = '#1d4ed8'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isDownloading) {
+                e.currentTarget.style.background = '#2563eb'
+              }
+            }}
+          >
+            {isDownloading ? (
+              <>
+                <div style={{
+                  ...styles.spinner,
+                  animation: 'spin 0.6s linear infinite',
+                }} />
+                Generating...
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: 18 }}>📄</span>
+                Download PDF Report
+              </>
+            )}
+          </button>
+        </div>
 
-        {/* Severity Badge */}
         {data.severity && data.severity_reason && (
           <SeverityBadge severity={data.severity} reason={data.severity_reason} />
         )}
 
-        {/* GPS Map */}
         {data.latitude && data.longitude && (
           <div style={styles.card}>
             <h2 style={styles.cardTitle}>Analysis Location</h2>
@@ -336,7 +439,6 @@ export default function ResultsPage() {
           </div>
         )}
 
-        {/* Auto-Generated Tags */}
         {data.tags && data.tags.length > 0 && (
           <div style={styles.card}>
             <h2 style={styles.cardTitle}>Auto-Generated Tags</h2>
@@ -350,13 +452,11 @@ export default function ResultsPage() {
           </div>
         )}
 
-        {/* Score Card */}
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Overall Score</h2>
           <p style={styles.score}>{(data.score * 100).toFixed(1)}%</p>
         </div>
 
-        {/* Confidence Slider */}
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Confidence Threshold</h2>
 
@@ -380,7 +480,6 @@ export default function ResultsPage() {
           </p>
         </div>
 
-        {/* Original Image */}
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Original Image</h2>
           <div style={styles.viewer}>
@@ -392,7 +491,6 @@ export default function ResultsPage() {
           </div>
         </div>
 
-        {/* Detected Objects */}
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Detected Objects</h2>
           <div style={styles.viewer}>
@@ -403,7 +501,6 @@ export default function ResultsPage() {
           </div>
         </div>
 
-        {/* Detections Table */}
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Detections</h2>
 
@@ -471,7 +568,6 @@ export default function ResultsPage() {
           )}
         </div>
 
-        {/* Detection Counts Chart */}
         <div style={styles.card}>
           <h2 style={styles.cardTitle}>Detection Counts</h2>
 

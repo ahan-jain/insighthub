@@ -11,72 +11,24 @@ from .cv.infer import ObjectDetector
 from .cv.annotate import draw_detections
 from .utils.severity_classifier import SeverityClassifier
 from .utils.auto_tagger import AutoTagger
+from .utils.pdf_generator import generate_analysis_report
 
 
 class Detection(BaseModel):
-    """
-    Represents a single object detection.
-    
-    This model validates that:
-    - label is a string
-    - confidence is between 0.0 and 1.0
-    - bbox has exactly 4 numbers
-    """
-    label: str = Field(
-        ..., 
-        description="Object class name (e.g., 'person', 'car')"
-    )
-    confidence: float = Field(
-        ..., 
-        ge=0.0,
-        le=1.0,
-        description="Confidence score (0.0 to 1.0)"
-    )
-    bbox: List[float] = Field(
-        ...,
-        min_items=4,
-        max_items=4,
-        description="Bounding box [x1, y1, x2, y2]"
-    )
+    label: str = Field(..., description="Object class name (e.g., 'person', 'car')")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0.0 to 1.0)")
+    bbox: List[float] = Field(..., min_items=4, max_items=4, description="Bounding box [x1, y1, x2, y2]")
 
 
 class AnalysisResponse(BaseModel):
-    """
-    Complete response sent back to the client.
-    
-    Contains:
-    - Unique ID for this analysis
-    - List of all detections
-    - Overall quality score
-    - Human-readable summary
-    """
     analysis_id: str = Field(..., description="Unique UUID")
     detections: List[Detection] = Field(..., description="All detected objects")
     score: float = Field(..., ge=0.0, le=1.0, description="Mean confidence")
     summary: str = Field(..., description="Human-readable summary")
-
-    latitude: Optional[float] = Field(
-        None, 
-        ge=-90, 
-        le=90, 
-        description="GPS latitude"
-    )
-    longitude: Optional[float] = Field(
-        None, 
-        ge=-180, 
-        le=180, 
-        description="GPS longitude"
-    )
-    location_accuracy: Optional[float] = Field(
-        None, 
-        ge=0, 
-        description="GPS accuracy in meters"
-    )
-    timestamp: str = Field(
-        ..., 
-        description="ISO 8601 timestamp"
-    )
-    
+    latitude: Optional[float] = Field(None, ge=-90, le=90, description="GPS latitude")
+    longitude: Optional[float] = Field(None, ge=-180, le=180, description="GPS longitude")
+    location_accuracy: Optional[float] = Field(None, ge=0, description="GPS accuracy in meters")
+    timestamp: str = Field(..., description="ISO 8601 timestamp")
     severity: str = Field(..., description="Issue severity level")
     severity_reason: str = Field(..., description="Explanation for severity")
     tags: List[str] = Field(..., description="Auto-generated contextual tags")
@@ -101,7 +53,6 @@ STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR = Path("app/cv/storage/images")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# In-memory storage for analyses
 analyses_storage = {}
 
 
@@ -163,9 +114,7 @@ async def analyze_image(
         print(f"Summary: {summary}")
         
         detection_models = [Detection(**d) for d in detections]
-        
         severity, severity_reason = SeverityClassifier.classify(detections)
-        
         tags = AutoTagger.generate_tags(detections)
         
         response = AnalysisResponse(
@@ -183,7 +132,13 @@ async def analyze_image(
         )
         
         analyses_storage[analysis_id] = response.model_dump()
-        
+
+        try:
+            annotated_path = OUTPUT_DIR / f"{analysis_id}_annotated.jpg"
+            draw_detections(str(image_path), detections, str(annotated_path))
+        except Exception as e:
+            print(f"Warning: Could not generate annotated image: {e}")
+
         return response
     
     except Exception as e:
@@ -212,3 +167,40 @@ def get_annotated_image(analysis_id: str):
         return FileResponse(path)
     
     raise HTTPException(404, f"Annotated image not found: {analysis_id}")
+
+
+@app.get("/analyze/{analysis_id}/report")
+async def generate_report(analysis_id: str):
+    if analysis_id not in analyses_storage:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    
+    analysis_data = analyses_storage[analysis_id]
+    
+    for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]:
+        original_path = STORAGE_DIR / f"{analysis_id}{ext}"
+        if original_path.exists():
+            break
+    else:
+        raise HTTPException(status_code=404, detail="Original image not found")
+    
+    annotated_path = OUTPUT_DIR / f"{analysis_id}_annotated.jpg"
+    if not annotated_path.exists():
+        raise HTTPException(status_code=404, detail="Annotated image not found")
+    
+    pdf_path = STORAGE_DIR / f"{analysis_id}_report.pdf"
+    
+    success = generate_analysis_report(
+        analysis_data=analysis_data,
+        original_image_path=str(original_path),
+        annotated_image_path=str(annotated_path),
+        output_path=str(pdf_path)
+    )
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="PDF generation failed")
+    
+    return FileResponse(
+        path=str(pdf_path),
+        media_type="application/pdf",
+        filename=f"analysis_{analysis_id}_report.pdf"
+    )
