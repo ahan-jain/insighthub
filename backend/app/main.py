@@ -12,6 +12,8 @@ from .cv.annotate import draw_detections
 from .utils.severity_classifier import SeverityClassifier
 from .utils.auto_tagger import AutoTagger
 from .utils.pdf_generator import generate_analysis_report
+from collections import Counter
+from datetime import timedelta
 
 
 class Detection(BaseModel):
@@ -204,3 +206,72 @@ async def generate_report(analysis_id: str):
         media_type="application/pdf",
         filename=f"analysis_{analysis_id}_report.pdf"
     )
+
+@app.get("/analytics/overview")
+async def get_analytics_overview():
+    if not analyses_storage:
+        return {
+            "total_analyses": 0,
+            "time_series": [],
+            "top_detections": [],
+            "recent_analyses": [],
+            "severity_breakdown": {}
+        }
+    
+    total_analyses = len(analyses_storage)
+    
+    time_series_data = {}
+    for analysis in analyses_storage.values():
+        date = datetime.fromisoformat(analysis['timestamp'].replace('Z', '+00:00'))
+        date_key = date.strftime('%Y-%m-%d')
+        time_series_data[date_key] = time_series_data.get(date_key, 0) + 1
+    
+    today = datetime.now()
+    time_series = []
+    for i in range(30, -1, -1):
+        date = today - timedelta(days=i)
+        date_key = date.strftime('%Y-%m-%d')
+        time_series.append({
+            "date": date_key,
+            "count": time_series_data.get(date_key, 0)
+        })
+    
+    all_labels = []
+    for analysis in analyses_storage.values():
+        for detection in analysis['detections']:
+            all_labels.append(detection['label'])
+    
+    label_counts = Counter(all_labels)
+    top_detections = [
+        {"label": label, "count": count}
+        for label, count in label_counts.most_common(10)
+    ]
+    
+    sorted_analyses = sorted(
+        analyses_storage.values(),
+        key=lambda x: x['timestamp'],
+        reverse=True
+    )
+    recent_analyses = [
+        {
+            "analysis_id": a['analysis_id'],
+            "timestamp": a['timestamp'],
+            "detection_count": len(a['detections']),
+            "score": a['score'],
+            "severity": a.get('severity', 'UNKNOWN')
+        }
+        for a in sorted_analyses[:10]
+    ]
+    
+    severity_counts = Counter(
+        a.get('severity', 'UNKNOWN')
+        for a in analyses_storage.values()
+    )
+    
+    return {
+        "total_analyses": total_analyses,
+        "time_series": time_series,
+        "top_detections": top_detections,
+        "recent_analyses": recent_analyses,
+        "severity_breakdown": dict(severity_counts)
+    }

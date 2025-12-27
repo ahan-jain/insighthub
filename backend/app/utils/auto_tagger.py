@@ -1,121 +1,70 @@
-from typing import List, Set
-
+from typing import List, Dict, Set
 
 class AutoTagger:
-
-    LABEL_TAGS = {
-        
-        #personnel
-        'person': ['personnel', 'human-present'],
     
-        # PPE
+    LABEL_TAGS = {
+        # Personnel
+        'person': ['personnel', 'human-present'],
+        'head': ['personnel', 'human-present'],
+        
+        # PPE Equipment
         'helmet': ['safety-equipment', 'ppe', 'ppe-compliant', 'head-protection'],
         'vest': ['safety-equipment', 'ppe', 'ppe-compliant', 'high-visibility'],
+        'mask': ['safety-equipment', 'ppe', 'ppe-compliant', 'respiratory-protection'],
         'gloves': ['safety-equipment', 'ppe', 'ppe-compliant', 'hand-protection'],
         'goggles': ['safety-equipment', 'ppe', 'ppe-compliant', 'eye-protection'],
-        'mask': ['safety-equipment', 'ppe', 'ppe-compliant', 'respiratory-protection'],
         'safety_shoe': ['safety-equipment', 'ppe', 'ppe-compliant', 'foot-protection'],
         
-        # Infrastructure
-        'pipe': ['infrastructure', 'plumbing'],
-        'valve': ['infrastructure', 'mechanical'],
-
-        # Damage indicators
-        'crack': ['damage', 'structural-issue', 'maintenance-required'],
-        'leak': ['damage', 'immediate-action', 'leak-risk'],
-        'fire': ['emergency', 'immediate-action', 'critical'],
-
+        # Infrastructure Damage
+        'crack': ['infrastructure-damage', 'structural-issue', 'maintenance-required'],
+        'pothole': ['infrastructure-damage', 'road-hazard', 'maintenance-required'],
+        
+        # Emergency
+        'fire': ['emergency', 'critical-hazard', 'evacuation-required'],
+        'smoke': ['emergency', 'fire-risk', 'investigation-required'],
+        
         # Vehicles
-        'car': ['vehicle', 'transportation'],
-        'truck': ['vehicle', 'heavy-equipment'],
-        'bus': ['vehicle', 'public-transport'],
-
-        # Construction
-        'excavator': ['construction', 'heavy-equipment'],
-        'crane': ['construction', 'lifting-equipment'],
-        'ladder': ['construction', 'elevated-work'],
-
-        # Animals
-        'dog': ['animal', 'pet'],
-        'cat': ['animal', 'pet'],
-        'bird': ['animal', 'wildlife'],
+        'car': ['infrastructure', 'vehicle'],
+        'truck': ['infrastructure', 'vehicle', 'heavy-vehicle'],
+        'bus': ['infrastructure', 'vehicle', 'heavy-vehicle'],
     }
-
+    
     @classmethod
-    def generate_tags(cls, detections: List[dict]) -> List[str]:
+    def generate_tags(cls, detections: List[Dict]) -> List[str]:
         if not detections:
-            return ['no-detections']
-
+            return []
+        
         tags: Set[str] = set()
         labels = [d['label'].lower() for d in detections]
-
-        # 1. Add base tags from label mappings
+        
         for label in labels:
             if label in cls.LABEL_TAGS:
                 tags.update(cls.LABEL_TAGS[label])
-
-        # 2. Add combination tags (context-aware)
-        tags.update(cls._get_combination_tags(labels))
-
-        # 3. Add count-based tags
-        person_count = labels.count('person')
-        if person_count > 1:
-            tags.add('multiple-workers')
-        if person_count >= 5:
-            tags.add('team-present')
-
-        # 4. Add confidence-based tags
-        high_conf_count = sum(1 for d in detections if d['confidence'] > 0.85)
-        if high_conf_count >= 3:
-            tags.add('high-confidence')
-
-        # 5. Add object diversity tag
-        unique_labels = len(set(labels))
-        if unique_labels >= 5:
-            tags.add('complex-scene')
-
+        
+        # Contextual rules - check if person/head detected
+        has_person = 'person' in labels or 'head' in labels
+        
+        if has_person:
+            ppe_equipment = {'helmet', 'vest', 'mask', 'gloves', 'goggles', 'safety_shoe'}
+            detected_ppe = ppe_equipment.intersection(labels)
+            
+            # Check specifically for helmet
+            has_helmet = 'helmet' in labels
+            
+            if not has_helmet:
+                tags.add('safety-violation')
+                tags.add('helmet-missing')
+            elif len(detected_ppe) >= 3:
+                tags.add('full-ppe-compliant')
+            elif len(detected_ppe) >= 1:
+                tags.add('partial-ppe')
+        
+        # Emergency scenarios
+        if 'fire' in labels or 'smoke' in labels:
+            tags.add('immediate-action-required')
+        
+        # Infrastructure concerns
+        if 'crack' in labels or 'pothole' in labels:
+            tags.add('inspection-required')
+        
         return sorted(list(tags))
-
-    @classmethod
-    def _get_combination_tags(cls, labels: List[str]) -> Set[str]:
-        tags: Set[str] = set()
-        label_set = set(labels)
-
-        # Safety combinations
-        if 'person' in label_set:
-            if any(ppe in label_set for ppe in ['hard_hat', 'helmet', 'vest', 'safety_vest']):
-                tags.add('ppe-compliant')
-            else:
-                tags.add('safety-review-needed')
-
-        # Infrastructure damage
-        if 'crack' in label_set:
-            if any(infra in label_set for infra in ['pipe', 'wall', 'beam', 'column']):
-                tags.add('structural-damage')
-            if 'pipe' in label_set:
-                tags.add('pipe-damage')
-                tags.add('leak-risk')
-
-        # Construction site
-        construction_indicators = {'excavator', 'crane', 'truck', 'ladder', 'hard_hat'}
-        if len(construction_indicators.intersection(label_set)) >= 2:
-            tags.add('construction-site')
-
-        # Elevated work
-        if 'ladder' in label_set and 'person' in label_set:
-            tags.add('elevated-work')
-            tags.add('fall-risk')
-
-        # Vehicle area
-        vehicle_types = {'car', 'truck', 'bus'}
-        if len(vehicle_types.intersection(label_set)) >= 2:
-            tags.add('vehicle-area')
-            tags.add('traffic')
-
-        # Emergency indicators
-        emergency_keywords = {'fire', 'smoke', 'flood', 'gas'}
-        if emergency_keywords.intersection(label_set):
-            tags.add('emergency')
-            tags.add('immediate-response-required')
-
-        return tags

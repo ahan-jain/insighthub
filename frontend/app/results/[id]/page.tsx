@@ -376,8 +376,16 @@ export default function ResultsPage() {
     <main style={styles.page}>
       <div style={styles.container}>
         <div style={styles.headerRow}>
-          <div style={{ flex: 1 }}>
-            <Link href="/" style={styles.backLink}>← Back to Upload</Link>
+        <div style={{ flex: 1 }}>
+            <div style={{ marginBottom: 16 }}>
+              <Link href="/dashboard" style={styles.backLink}>
+                ← Dashboard
+              </Link>
+              <span style={{ margin: '0 12px', color: '#d1d5db' }}>|</span>
+              <Link href="/" style={styles.backLink}>
+                Upload
+              </Link>
+            </div>
             <h1 style={styles.h1}>Analysis Results</h1>
             <p style={styles.muted}>{data.summary}</p>
           </div>

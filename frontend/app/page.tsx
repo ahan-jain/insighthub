@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import { saveOfflineAnalysis, getPendingCount } from '../lib/offline-db'
-import { syncPendingAnalyses } from '../lib/sync-manager'
+import { syncPendingAnalyses, startPeriodicSync } from '../lib/sync-manager'
+import Link from 'next/link'
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
@@ -224,6 +225,11 @@ export default function Home() {
   const [isOnline, setIsOnline] = useState(true)
   const [pendingCount, setPendingCount] = useState(0)
 
+  useEffect(() => {
+    const cleanup = startPeriodicSync()
+    return cleanup
+  }, [])
+
   // Monitor online/offline status
   useEffect(() => {
     const updateOnlineStatus = () => {
@@ -411,6 +417,35 @@ export default function Home() {
             Geo-tagged Field Inspection Platform
             {!isOnline && ' • Offline Mode'}
           </p>
+          <div style={{ textAlign: 'center', marginTop: 12 }}>
+          <Link
+            href="/dashboard"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 16px',
+              borderRadius: 10,
+              background: '#fff',
+              border: '1px solid #e5e7eb',
+              color: '#2563eb',
+              textDecoration: 'none',
+              fontWeight: 700,
+              fontSize: 13,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#bfdbfe'
+              e.currentTarget.style.background = '#eff6ff'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = '#e5e7eb'
+              e.currentTarget.style.background = '#fff'
+            }}
+          >
+            <span>📊</span>
+            View Dashboard
+          </Link>
+        </div>
 
           {/* Status bar with online/offline and pending count */}
           <div style={styles.statusBar}>

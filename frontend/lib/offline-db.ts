@@ -22,7 +22,7 @@ const STORE_NAME = 'pending-analyses'
 
 let dbInstance: IDBPDatabase<OfflineDB> | null = null
 
-async function getDB(): Promise<IDBPDatabase<OfflineDB>> {
+export async function getDB(): Promise<IDBPDatabase<OfflineDB>> {
   if (dbInstance) return dbInstance
 
   dbInstance = await openDB<OfflineDB>(DB_NAME, DB_VERSION, {
@@ -93,3 +93,5 @@ export async function clearAllPending() {
   await tx.store.clear()
   await tx.done
 }
+
+export { getDB as openDB }
