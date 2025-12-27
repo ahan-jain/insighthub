@@ -5,7 +5,7 @@ from typing import List, Dict
 class ObjectDetector:
     def __init__(self):
         self.general_model = YOLO("yolov8n.pt")
-        print("✅ General YOLO v8 loaded")
+        print("General YOLO v8 loaded")
         
         self.ppe_model = self._load_model("app/models/ppe-detection.pt", "PPE Detection")
         self.helmet_model = self._load_model("app/models/helmet-violation.pt", "Helmet Violation Detection")
@@ -78,7 +78,7 @@ class ObjectDetector:
         
         # 5. Fire Detection
         if self.fire_model:
-            fire_results = self.fire_model(image_path, conf = 0.6, verbose=False)[0]
+            fire_results = self.fire_model(image_path, conf = 0.66, verbose=False)[0]
             for box in fire_results.boxes:
                 label = fire_results.names[int(box.cls[0])]
                 label = label.lower().replace(' ', '_')
